@@ -1,0 +1,93 @@
+def XGB_GS(X, y, SEED, threads):
+    from numpy import mean
+    from numpy import std
+    from sklearn.model_selection import KFold
+    from sklearn.metrics import roc_auc_score
+    import datetime
+
+    from sklearn.experimental import enable_halving_search_cv  # noqa
+    from sklearn.model_selection import HalvingGridSearchCV
+
+    X1 = X
+    y = y
+    X1 = scaler.transform(X1)
+
+    from xgboost import XGBClassifier
+    # configure the cross-validation procedure
+    cv_outer = KFold(n_splits=5, shuffle=True, random_state=SEED)
+    # enumerate splits
+    outer_results = list()
+
+    idx = 0
+
+    t0 = datetime.datetime.now().time()
+    for train_ix, test_ix in cv_outer.split(X1):
+        # split data
+        X_train, X_test = X1[train_ix, :], X1[test_ix, :]
+        y_train, y_test = y[train_ix], y[test_ix]
+        # configure the cross-validation procedure
+        cv_inner = KFold(n_splits=5, shuffle=True, random_state=SEED)
+        # define the model
+        model = xgb = XGBClassifier(booster='gbtree', n_jobs=threads, random_state=SEED, objective='binary:logistic', verbosity =0) 
+        # define search space
+        space = dict()
+
+        space  = {
+          #  'silent': [1],
+        'max_depth': [ 8, 16], #6, 8,16,],
+        'learning_rate': [0.01, 0.5, 0.1], #0.03], # 0.05, 0.1], #[0.001, 0.01, 0.1, 0.2,],
+        'subsample': [0.25, 0.5, 0.75], #0.5, 0.7,  0.9, 1.0],
+        #'colsample_bytree': [0,0.2,0.4,0.6,0.8,1], #[0.4, 0.6,  0.8, 1.0],
+        #'colsample_bylevel': [0.4, 0.6, 0.8,  1.0],
+        'min_child_weight': [0.5, 1.0, 3.0], #5.0,], # 7.0, 10.0],
+        'gamma': [0,1,2],
+        'lambda': [0,1], #10.0, 50.0, 100.0],
+        'n_estimators': [200], #1000],
+        'alpha': [0,1,2]
+
+
+        #'max_depth': [5,8,10,12], #[10, 15, 20, 30],
+        #'n_estimators': [100],
+        #'learning_rate': [0.01, 0.05, 0.1],
+        #"gamma": [0,0.3,0.6],
+        #"lambda": [0.6, 0.8, 1], #[0.8, 1, 2],
+        #"alpha": [0,0.05, 0.1],
+        #'min_child_weight': [0.5, 0.66, 0.75], #[0.33, 0.66, 1],
+        #"scale_pos_weight": [0.5],
+       # "subsample": [0.1,0.2,0.3,0.4], #[0.33, 0.66, 1],  # Fix subsample
+       # "colsample_bytree": [0.5,0.6,0.7], #[0.33, 0.66, 1], 
+    }
+
+
+
+        # define search
+        #search = GridSearchCV(model, space, scoring='roc_auc', cv=cv_inner, refit=True)
+        xgb_search = HalvingGridSearchCV(model,
+                        space,
+                        random_state=42, 
+                        verbose=10, 
+                        cv = cv_inner,
+                        scoring='roc_auc', 
+                        aggressive_elimination=True,
+                        refit = True, n_jobs=threads)#.fit(X_train, y_train)
+
+       # execute search
+        result = xgb_search.fit(X_train, y_train)
+        # get the best performing model fit on the whole training set
+        best_model = result.best_estimator_
+        # evaluate model on the hold out dataset
+        yhat = best_model.predict(X_test)
+        # evaluate the model
+        acc = roc_auc_score(y_test, best_model.predict_proba(X_test)[:,-1]) #accuracy_score(y_test, yhat)
+        # store the result
+        outer_results.append(acc)
+        # report progress
+        print('>acc=%.3f, est=%.3f, cfg=%s' % (acc, result.best_score_, result.best_params_))
+       # idx += 1
+    # summarize the estimated performance of the model
+    print('Accuracy: %.3f (%.3f)' % (mean(outer_results), std(outer_results)))
+    t1 = datetime.datetime.now().time()
+
+    print(t0)
+    print(t1)
+    xgb_search_.best_params_
